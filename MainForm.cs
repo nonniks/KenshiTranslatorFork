@@ -61,9 +61,11 @@ namespace KenshiTranslator
         List<string> selectedMods = new List<string>();
         List<string> workshopMods = new List<string>();
 
+        private ReverseEngineer re = new ReverseEngineer();
         private Button openGameDirButton;
         private Button openSteamLinkButton;
         private Button copyToGameDirButton;
+        private Button TranslateModButton;
 
         public MainForm()
         {
@@ -109,6 +111,10 @@ namespace KenshiTranslator
             copyToGameDirButton.Click += CopyToGameDirButton_Click;
             buttonPanel.Controls.Add(copyToGameDirButton);
 
+            TranslateModButton = new Button { Text = "Translate Mod", AutoSize = true, Enabled = false };
+            TranslateModButton.Click += TranslateModButton_Click;
+            buttonPanel.Controls.Add(TranslateModButton);
+
             steamInstallPath = (string)Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\Valve\Steam", "InstallPath", null);
             if (string.IsNullOrEmpty(steamInstallPath))
             {
@@ -134,6 +140,7 @@ namespace KenshiTranslator
                 openGameDirButton.Enabled = false;
                 openSteamLinkButton.Enabled = false;
                 copyToGameDirButton.Enabled = false;
+                TranslateModButton.Enabled = false;
                 return;
             }
 
@@ -143,6 +150,7 @@ namespace KenshiTranslator
                 openGameDirButton.Enabled = mod.InGameDir;
                 copyToGameDirButton.Enabled = !mod.InGameDir && (mod.workshopId != -1);
                 openSteamLinkButton.Enabled = (mod.workshopId != -1);
+                TranslateModButton.Enabled = mod.InGameDir;
             }
         }
         private void OpenGameDirButton_Click(object sender, EventArgs e)
@@ -158,7 +166,27 @@ namespace KenshiTranslator
                 MessageBox.Show(modpath+ " not found!");
             }
         }
+        private void TranslateModButton_Click(object sender, EventArgs e)
+        {
+            string modName = modsListView.SelectedItems[0].Text;
+            string modPath = Path.Combine(gamedirModsPath, modName.Substring(0, modName.Length - 4), modName).Replace("/", "\\");
+            string backupPath = Path.Combine(gamedirModsPath, modName.Substring(0, modName.Length - 4), modName.Substring(0, modName.Length - 4)+".backup").Replace("/", "\\");
 
+            if (!File.Exists(modPath))
+            {
+                MessageBox.Show(modPath + " not found!");
+                return;
+            }
+            re.LoadModFile(modPath);
+            if (!File.Exists(backupPath))
+            {
+                File.Copy(modPath, backupPath);
+                Console.WriteLine($"Backup created at {backupPath}");
+            }
+            re.ApplyToStrings(s => "meep");
+            re.SaveModFile(modPath);
+            Console.WriteLine($"Mod saved back to {modPath}");
+        }
         private void OpenSteamLinkButton_Click(object sender, EventArgs e)
         {
             string modName = modsListView.SelectedItems[0].Text;
