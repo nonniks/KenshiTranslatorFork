@@ -12,12 +12,29 @@
     <None Remove="icons\kenshiicon.png" />
     <None Remove="icons\selectedicon.png" />
     <None Remove="icons\steamicon.png" />
+    <None Remove="LanguageModels\Core14.profile.xml" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="LanguageModels\Core14.profile.xml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="icons\kenshiicon.png" />
     <EmbeddedResource Include="icons\selectedicon.png" />
     <EmbeddedResource Include="icons\steamicon.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NTextCat" Version="0.3.65" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="languages.txt">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

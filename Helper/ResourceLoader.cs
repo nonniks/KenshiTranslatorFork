@@ -1,5 +1,5 @@
 ﻿using System.Reflection;
-namespace KenshiTranslator
+namespace KenshiTranslator.Helper
 {
     public static class ResourceLoader
     {

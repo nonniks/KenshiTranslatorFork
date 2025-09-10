@@ -5,7 +5,7 @@ using System.Reflection.PortableExecutable;
 using System.Text;
 using System.Text.Json;
 
-namespace KenshiTranslator
+namespace KenshiTranslator.Helper
 {
     public class ReverseEngineer
     {
@@ -257,6 +257,25 @@ namespace KenshiTranslator
                         record.StringFields[key] = func(record.StringFields[key]);
                 }
             }
+        }
+        public string getModSummary(int maxChars = 5000)
+        {
+            var sb = new StringBuilder();
+            foreach (var record in modData.Records)
+            {
+                if (!string.IsNullOrEmpty(record.Name))
+                    sb.Append(", ").Append(record.Name);
+
+                if (record.StringFields != null)
+                {
+                    foreach (var value in record.StringFields.Values)
+                        sb.Append(", ").Append(value);
+                }
+                if (sb.Length >= maxChars)
+                    break;
+            }
+
+            return sb.ToString();
         }
     }
     public class ModData
