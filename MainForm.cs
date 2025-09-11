@@ -1,4 +1,5 @@
 ﻿using KenshiTranslator.Helper;
+using KenshiTranslator.Translator;
 using Microsoft.Win32;
 using NTextCat;
 using System.Diagnostics;
@@ -94,7 +95,10 @@ namespace KenshiTranslator
         private Button copyToGameDirButton;
         private readonly object reLockRE = new object();
         private ComboBox providerCombo;
+        private ComboBox fromLangCombo;
+        private ComboBox toLangCombo;
         private Button TranslateModButton;
+        private ITranslator translator;
         public MainForm()
         {
             Text = "Kenshi Translator";
@@ -166,9 +170,24 @@ namespace KenshiTranslator
             buttonPanel.Controls.Add(copyToGameDirButton);
 
             providerCombo = new ComboBox { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList };
-            providerCombo.Items.AddRange(new string[] { "Google", "Libre" });
+            //providerCombo.Items.AddRange(new string[] { "Google", "Libre" });
+            providerCombo.Items.AddRange(new string[] { "Libre", "Fun","Google" });
             providerCombo.SelectedIndex = 0;
+            translator = LibreTranslator.Instance;
+            providerCombo.SelectedIndexChanged += (s,e)=>providerCombo_SelectedIndexChanged(s,e);
             buttonPanel.Controls.Add(providerCombo);
+
+
+            fromLangCombo = new ComboBox();
+            toLangCombo = new ComboBox();
+            fromLangCombo.Width = 120;
+            toLangCombo.Width = 120;
+            //fromLangCombo.Top = providerCombo.Bottom + 10;
+            //toLangCombo.Top = providerCombo.Bottom + 10;
+            //fromLangCombo.Left = providerCombo.Left;
+            //toLangCombo.Left = fromLangCombo.Right + 10;
+            buttonPanel.Controls.Add(fromLangCombo);
+            buttonPanel.Controls.Add(toLangCombo);
 
 
             TranslateModButton = new Button { Text = "Translate Mod", AutoSize = true, Enabled = false };
@@ -187,6 +206,74 @@ namespace KenshiTranslator
             //this.FormClosing += (s, e) => ModItem.DisposeIconCache();
             _ = InitializeAsync();
 
+        }
+        private async void providerCombo_SelectedIndexChanged(object sender, EventArgs e)
+        {
+
+            string provider = providerCombo.SelectedItem.ToString();
+            switch (providerCombo.SelectedItem.ToString())
+            {
+                case "Libre":
+                    translator = LibreTranslator.Instance;
+                    break;
+                case "Fun":
+                    translator = FunTranslator.Instance;
+                    break;
+                default:
+                    translator = GoogleTranslator.Instance;
+                    break;
+            }
+
+            // Populate language combos
+            var languages = await translator.GetSupportedLanguagesAsync();
+
+            fromLangCombo.DataSource = new BindingSource(languages.ToList(), null);
+            fromLangCombo.DisplayMember = "Value";  // human name
+            fromLangCombo.ValueMember = "Key";      // language code
+
+            toLangCombo.DataSource = new BindingSource(languages.ToList(), null);
+            toLangCombo.DisplayMember = "Value";
+            toLangCombo.ValueMember = "Key";
+
+            // Default selections
+            fromLangCombo.SelectedValue = "en";   // English as default source
+            toLangCombo.SelectedValue = "en";   // English as default target
+        }
+        private async Task LoadLibreTranslateLanguagesAsync()
+        {
+            try
+            {
+                using var client = new System.Net.Http.HttpClient();
+                var response = await client.GetStringAsync("https://libretranslate.com/languages");
+                var list = System.Text.Json.JsonSerializer.Deserialize<List<LanguageInfo>>(response);
+
+                this.Invoke(() =>
+                {
+                    fromLangCombo.Items.Clear();
+                    toLangCombo.Items.Clear();
+                    foreach (var lang in list)
+                    {
+                        fromLangCombo.Items.Add(new ComboItem(lang.code, lang.name));
+                        toLangCombo.Items.Add(new ComboItem(lang.code, lang.name));
+                    }
+                    // Set defaults:
+                    toLangCombo.SelectedIndex = fromLangCombo.Items
+                        .Cast<ComboItem>()
+                        .ToList().FindIndex(i => i.Code == "en");
+                });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Failed to load LibreTranslate languages: " + ex.Message);
+            }
+        }
+        public record LanguageInfo(string code, string name);
+        public class ComboItem
+        {
+            public string Code { get; }
+            public string Name { get; }
+            public ComboItem(string code, string name) { Code = code; Name = name; }
+            public override string ToString() => Name;
         }
         private async Task InitializeAsync()
         {
@@ -220,6 +307,7 @@ namespace KenshiTranslator
 
                 // Start language detection
                 _ = DetectAllLanguagesAsync();
+                _ = LoadLibreTranslateLanguagesAsync();
             }
             catch (Exception ex)
             {
@@ -299,13 +387,13 @@ namespace KenshiTranslator
             if (modsListView.SelectedItems.Count == 0) return;
 
             // Choose provider
-            Translator.Provider = providerCombo.SelectedIndex == 0 ? TranslationProvider.Google : TranslationProvider.Libre;
+            //Translator.Provider = providerCombo.SelectedIndex == 0 ? TranslationProvider.Google : TranslationProvider.Libre;
 
             var selectedItem = modsListView.SelectedItems[0];
             string modName = selectedItem.Text;
 
             // Translate
-            string translated = await Translator.Translate(modName, "en");
+            //string translated = await Translator.Translate(modName, "en");
             //translationBox.Text = translated;
         }
         private void OpenSteamLinkButton_Click(object sender, EventArgs e)
