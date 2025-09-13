@@ -3,6 +3,11 @@ using KenshiTranslator.Translator;
 using NTextCat;
 using System.Diagnostics;
 using System.Text;
+//TODO: it seems after a while of using a provider it silently stops working and just returns the original text.
+//TODO: it saves only 1 line each time until it finishes then saves all lines
+//TODO: 3rd column should change after translating
+//TODO: should have different message for translating mod and creating dictionary
+//TODO: being able to order depending on a column
 
 namespace KenshiTranslator
 {
@@ -463,7 +468,7 @@ namespace KenshiTranslator
         }
         private Color colorLanguage(string lang)
         {
-            return (lang == "eng|eng") ? Color.Green : Color.Red; 
+            return (lang == "eng|___") ? Color.Green : Color.Red; 
         }
         private void PopulateModsListView()
         {
@@ -528,6 +533,15 @@ namespace KenshiTranslator
 
 
         }
+        private string detectLanguageFor(string s)
+        {
+            var candidates = identifier!.Identify(s).OrderBy(c => c.Item2).ToList();
+            var best = candidates[0];
+            if (best.Item2 > 3950)
+                return "___";
+            return best.Item1.Iso639_3;
+
+        }
         private async Task DetectAllLanguagesAsync()
         {
             var modsToDetect = modsListView.Items
@@ -559,10 +573,11 @@ namespace KenshiTranslator
                     {
                         modM.LoadModFile(mod.getModFilePath()!);
                         var lang_tuple = modM.GetReverseEngineer().getModSummary();
+                        
                         var alpha_lang = identifier!.Identify(lang_tuple.Item1.ToString()).ToList();
                         var sign_lang = identifier.Identify(lang_tuple.Item2.ToString()).ToList();
-                        var alpha_mostCertain = (alpha_lang == null || alpha_lang.FirstOrDefault() == null || lang_tuple.Item1.Length == 0) ? "Unknown" : alpha_lang.FirstOrDefault()!.Item1.Iso639_3;
-                        var sign_mostCertain = (sign_lang == null || sign_lang.FirstOrDefault() == null || lang_tuple.Item2.Length == 0) ? "Unknown" : sign_lang.FirstOrDefault()!.Item1.Iso639_3;
+                        var alpha_mostCertain = detectLanguageFor(lang_tuple.Item1.ToString());
+                        var sign_mostCertain = detectLanguageFor(lang_tuple.Item2.ToString());
 
                         return alpha_mostCertain + "|" + sign_mostCertain;  
                     });

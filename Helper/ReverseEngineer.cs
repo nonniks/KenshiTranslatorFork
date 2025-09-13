@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Reflection.PortableExecutable;
 using System.Text;
@@ -258,30 +259,35 @@ namespace KenshiTranslator.Helper
                 }
             }
         }
-        public Tuple<string,string> getModSummary(int maxChars = 5000)
+        private bool isAlphabet(char c)
         {
-            var sba = new StringBuilder();
-            var sbs = new StringBuilder();
+            return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+        }
+        public Tuple<string,string> getModSummary(int maxChars = 2000)//5000)
+        {
+            StringBuilder sba = new StringBuilder();
+            StringBuilder sbs = new StringBuilder();
             foreach (var record in modData.Records!)
             {
-                record.Name.All(c=>Char.IsLetterOrDigit(c));
                 if (!string.IsNullOrEmpty(record.Name))
-                    if(record.Name.All(c => Char.IsLetterOrDigit(c)))
-                        sba.Append(" ").Append(record.Name);
-                    else
-                        sbs.Append(" ").Append(record.Name);
+                    if(sba.Length <= maxChars)
+                        sba.Append(",").Append(new String(record.Name.Where(c => (isAlphabet(c) ||c == ' ')).ToArray()));
+                    if (sbs.Length <= maxChars)
+                        sbs.Append(",").Append(new String(record.Name.Where(c => !(isAlphabet(c) || c == ' ')).ToArray()));       
                 if (record.StringFields != null)
                 {
-                    foreach (var value in record.StringFields.Values) { 
-                        if (record.Name.All(c => Char.IsLetterOrDigit(c)))
-                            sba.Append(" ").Append(value);
-                        else
-                            sbs.Append(" ").Append(value);
+                    foreach (var value in record.StringFields.Values) {
+                        if (sba.Length <= maxChars)
+                            sba.Append(",").Append(new String(value.Where(c => (isAlphabet(c) || c == ' ')).ToArray()));
+                        if (sbs.Length <= maxChars) 
+                            sbs.Append(",").Append(new String(value.Where(c => !(isAlphabet(c) || c == ' ')).ToArray()));
                     }
                 }
-                if ((sba.Length + sbs.Length) >= maxChars)
+                if ((sba.Length >= maxChars) && (sbs.Length >= maxChars))
                     break;
             }
+            //MessageBox.Show($"{sba.ToString()}|{sbs.ToString()}");
+            //Debug.WriteLine($"{sba.ToString()}|{sbs.ToString()}");
             return Tuple.Create(sba.ToString(), sbs.ToString());
         }
         

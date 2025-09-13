@@ -26,7 +26,7 @@ namespace KenshiTranslator.Translator
             current_translator = translators.GetValueOrDefault(translator)!; 
         }
         public static GTranslate_Translator Instance => _instance.Value;
-        public async Task<string> TranslateAsync(string text, string sourceLang  = "en", string targetLang = "auto")
+        public async Task<string> TranslateAsync(string text, string sourceLang  = "auto", string targetLang = "en")
         {
                 var from = GTranslate.Language.GetLanguage(sourceLang);
                 var to = GTranslate.Language.GetLanguage(targetLang);
