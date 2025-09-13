@@ -78,8 +78,8 @@ namespace KenshiTranslator.Helper
             using var fs = File.OpenWrite(path);
             using var writer = new BinaryWriter(fs, Encoding.UTF8);
 
-            WriteHeader(writer, modData.Header);
-            foreach (var record in modData.Records)
+            WriteHeader(writer, modData.Header!);
+            foreach (var record in modData.Records!)
                 WriteRecord(writer, record);
 
             if (modData.Leftover != null)
@@ -128,7 +128,7 @@ namespace KenshiTranslator.Helper
                 case 17:
                     WriteInt(writer, header.DetailsLength);
                     WriteInt(writer, header.ModVersion);
-                    writer.Write(header.Details);
+                    writer.Write(header.Details!);
                     WriteInt(writer, header.RecordCount);
                     break;
             }
@@ -209,7 +209,7 @@ namespace KenshiTranslator.Helper
             WriteDictionary(writer, record.FilenameFields, WriteString);
 
             // Extra data
-            WriteInt(writer, record.ExtraDataFields.Count);
+            WriteInt(writer, record.ExtraDataFields!.Count);
             foreach (var kv in record.ExtraDataFields)
             {
                 WriteString(writer, kv.Key);
@@ -223,11 +223,11 @@ namespace KenshiTranslator.Helper
             }
 
             // Instance fields
-            WriteInt(writer, record.InstanceFields.Count);
+            WriteInt(writer, record.InstanceFields!.Count);
             foreach (var inst in record.InstanceFields)
             {
-                WriteString(writer, inst.Id);
-                WriteString(writer, inst.Target);
+                WriteString(writer, inst.Id!);
+                WriteString(writer, inst.Target!);
                 WriteFloat(writer, inst.Tx);
                 WriteFloat(writer, inst.Ty);
                 WriteFloat(writer, inst.Tz);
@@ -236,16 +236,16 @@ namespace KenshiTranslator.Helper
                 WriteFloat(writer, inst.Ry);
                 WriteFloat(writer, inst.Rz);
                 WriteInt(writer, inst.StateCount);
-                foreach (var s in inst.States)
+                foreach (var s in inst.States!)
                     WriteString(writer, s);
             }
         }
         public void ApplyToStrings(Func<string, string> func)
         {
-            if (modData.Header.FileType == 16 && modData.Header.Description != null)
+            if (modData.Header!.FileType == 16 && modData.Header.Description != null)
                 modData.Header.Description = func(modData.Header.Description);
             
-            foreach (var record in modData.Records)
+            foreach (var record in modData.Records!)
             {
                 if (record.Name != null)
                     record.Name = func(record.Name);
@@ -258,30 +258,39 @@ namespace KenshiTranslator.Helper
                 }
             }
         }
-        public string getModSummary(int maxChars = 5000)
+        public Tuple<string,string> getModSummary(int maxChars = 5000)
         {
-            var sb = new StringBuilder();
-            foreach (var record in modData.Records)
+            var sba = new StringBuilder();
+            var sbs = new StringBuilder();
+            foreach (var record in modData.Records!)
             {
+                record.Name.All(c=>Char.IsLetterOrDigit(c));
                 if (!string.IsNullOrEmpty(record.Name))
-                    sb.Append(", ").Append(record.Name);
-
+                    if(record.Name.All(c => Char.IsLetterOrDigit(c)))
+                        sba.Append(" ").Append(record.Name);
+                    else
+                        sbs.Append(" ").Append(record.Name);
                 if (record.StringFields != null)
                 {
-                    foreach (var value in record.StringFields.Values)
-                        sb.Append(", ").Append(value);
+                    foreach (var value in record.StringFields.Values) { 
+                        if (record.Name.All(c => Char.IsLetterOrDigit(c)))
+                            sba.Append(" ").Append(value);
+                        else
+                            sbs.Append(" ").Append(value);
+                    }
                 }
-                if (sb.Length >= maxChars)
+                if ((sba.Length + sbs.Length) >= maxChars)
                     break;
             }
-
-            return sb.ToString();
+            return Tuple.Create(sba.ToString(), sbs.ToString());
         }
+        
+
     }
     public class ModData
     {
-        public ModHeader Header { get; set; }
-        public List<ModRecord> Records { get; set; }
+        public ModHeader? Header { get; set; }
+        public List<ModRecord>? Records { get; set; }
         public byte[]? Leftover { get; set; }
     }
     public class ModHeader
@@ -314,13 +323,13 @@ namespace KenshiTranslator.Helper
         public Dictionary<string, float[]> Vec4Fields { get; set; } = new();
         public Dictionary<string, string> StringFields { get; set; } = new();
         public Dictionary<string, string> FilenameFields { get; set; } = new();
-        public Dictionary<string, Dictionary<string, int[]>> ExtraDataFields { get; set; }
-        public List<ModInstance> InstanceFields { get; set; }
+        public Dictionary<string, Dictionary<string, int[]>>? ExtraDataFields { get; set; }
+        public List<ModInstance>? InstanceFields { get; set; }
     }
     public class ModInstance
     {
-        public string Id { get; set; }
-        public string Target { get; set; }
+        public string? Id { get; set; }
+        public string? Target { get; set; }
         public float Tx { get; set; }
         public float Ty { get; set; }
         public float Tz { get; set; }
@@ -329,6 +338,6 @@ namespace KenshiTranslator.Helper
         public float Ry { get; set; }
         public float Rz { get; set; }
         public int StateCount { get; set; }
-        public List<string> States { get; set; }
+        public List<string>? States { get; set; }
     }
 }

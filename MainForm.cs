@@ -1,6 +1,5 @@
 ﻿using KenshiTranslator.Helper;
 using KenshiTranslator.Translator;
-using Microsoft.Win32;
 using NTextCat;
 using System.Diagnostics;
 using System.Text;
@@ -10,21 +9,18 @@ namespace KenshiTranslator
     public class MainForm : Form
     {
         private ListView modsListView;
-        private ImageList modIcons;
-        public static string steamInstallPath;
-        public static string gamedirModsPath;
-        public static string workshopModsPath;
+        private ImageList modIcons = new ImageList();
         private Dictionary<string, ModItem> mergedMods = new Dictionary<string, ModItem>();
         List<string> gameDirMods = new List<string>();
         List<string> selectedMods = new List<string>();
         List<string> workshopMods = new List<string>();
         private Dictionary<string, ListViewItem> modItemsLookup = new();
         private Dictionary<string, string> languageCache = new();
-        private RankedLanguageIdentifier identifier;
+        private RankedLanguageIdentifier? identifier;
 
         private ProgressBar progressBar;
         private Label progressLabel;
-        private ReverseEngineer re = new ReverseEngineer();
+        private ModManager modM = new ModManager(new ReverseEngineer());
         private Button openGameDirButton;
         private Button openSteamLinkButton;
         private Button copyToGameDirButton;
@@ -34,8 +30,8 @@ namespace KenshiTranslator
         private ComboBox toLangCombo;
         private Button TranslateModButton;
         private Button CreateDictionaryButton;
-        private Dictionary<string, string> _supportedLanguages;
-        private TranslatorInterface _activeTranslator;
+        private Dictionary<string, string>? _supportedLanguages;
+        private TranslatorInterface _activeTranslator=GTranslate_Translator.Instance;
         public class ComboItem
         {
             public string Code { get; }
@@ -136,9 +132,8 @@ namespace KenshiTranslator
             buttonPanel.Controls.Add(fromLangCombo);
             buttonPanel.Controls.Add(toLangCombo);
 
-            // Set defaults
-            fromLangCombo.SelectedValue = "en";  // now this works
-            toLangCombo.SelectedValue = "en";    // now this works
+            fromLangCombo.SelectedValue = "en";  
+            toLangCombo.SelectedValue = "en";   
 
             CreateDictionaryButton = new Button { Text = "Create Dictionary", AutoSize = true, Enabled = false };
             CreateDictionaryButton.Click += async (s, e) => await CreateDictionaryButton_Click();
@@ -148,29 +143,22 @@ namespace KenshiTranslator
             TranslateModButton.Click += async (s, e) => await TranslateModButton_Click();
             buttonPanel.Controls.Add(TranslateModButton);
 
-            steamInstallPath = (string)Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\Valve\Steam", "InstallPath", null);
-            if (string.IsNullOrEmpty(steamInstallPath))
-            {
-                steamInstallPath = (string)Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\Wow6432Node\Valve\Steam", "InstallPath", null);
-            }
-            workshopModsPath = Path.Combine(steamInstallPath, "steamapps/workshop/content/233860");
-            gamedirModsPath = Path.Combine(steamInstallPath, "steamapps/common/Kenshi/mods");
+            
 
             this.FormClosing += (s, e) => SaveLanguageCache();
-            //this.FormClosing += (s, e) => ModItem.DisposeIconCache();
+            this.FormClosing += (s, e) => ModItem.DisposeIconCache();
             _ = InitializeAsync();
             
 
         }
-        private async void providerCombo_SelectedIndexChanged(object sender, EventArgs e)
+        private async void providerCombo_SelectedIndexChanged(object? sender, EventArgs? e)
         {
             if (providerCombo.SelectedItem == null) return;
-            string provider = providerCombo.SelectedItem.ToString();
+            string provider = providerCombo.SelectedItem.ToString()!;
             _activeTranslator = GTranslate_Translator.Instance;
-            ((GTranslate_Translator)_activeTranslator).setTranslator(providerCombo.SelectedItem.ToString());
+            ((GTranslate_Translator)_activeTranslator).setTranslator(providerCombo.SelectedItem.ToString()!);
             _supportedLanguages = await _activeTranslator.GetSupportedLanguagesAsync();
 
-            // Populate ComboBoxes
             fromLangCombo.DataSource = _supportedLanguages.Select(lang => new ComboItem(lang.Key, lang.Value)).ToList();
             fromLangCombo.DisplayMember = "Name";
             fromLangCombo.ValueMember = "Code";
@@ -196,14 +184,12 @@ namespace KenshiTranslator
                     progressLabel.Refresh();
                 });
 
-                // Load data asynchronously
-                await Task.Run(() => LoadGameDirMods());
-                await Task.Run(() => LoadSelectedMods());
-                await Task.Run(() => LoadWorkshopMods());
+                gameDirMods = await Task.Run(() => modM.LoadGameDirMods());
+                selectedMods = await Task.Run(() => modM.LoadSelectedMods());
+                workshopMods = await Task.Run(() => modM.LoadWorkshopMods());
 
                 // Continue with UI setup on the main thread
                 this.Invoke((MethodInvoker)delegate {
-                    modIcons = new ImageList();
                     modIcons.ImageSize = new Size(48, 16);
                     modsListView.SmallImageList = modIcons;
                     InitLanguageDetector();
@@ -217,7 +203,6 @@ namespace KenshiTranslator
 
                 // Start language detection
                 _ = DetectAllLanguagesAsync();
-                //_ = LoadLibreTranslateLanguagesAsync();
                 providerCombo_SelectedIndexChanged(null,null);
             }
             catch (Exception ex)
@@ -260,7 +245,7 @@ namespace KenshiTranslator
             if (identifier == null)
                 identifier = new RankedLanguageIdentifierFactory().Load("LanguageModels/Core14.profile.xml");
         }
-        private void SelectedIndexChanged(object sender, EventArgs e)
+        private void SelectedIndexChanged(object? sender, EventArgs? e)
         {
             if (modsListView.SelectedItems.Count != 1)
             {
@@ -275,18 +260,18 @@ namespace KenshiTranslator
             string modName = modsListView.SelectedItems[0].Text;
             if (mergedMods.TryGetValue(modName, out var mod))
             {
-                openGameDirButton.Enabled = mod.InGameDir || (mod.workshopId != -1);
-                copyToGameDirButton.Enabled = !mod.InGameDir && (mod.workshopId != -1);
-                openSteamLinkButton.Enabled = (mod.workshopId != -1);
+                openGameDirButton.Enabled = mod.InGameDir || (mod.WorkshopId != -1);
+                copyToGameDirButton.Enabled = !mod.InGameDir && (mod.WorkshopId != -1);
+                openSteamLinkButton.Enabled = (mod.WorkshopId != -1);
                 CreateDictionaryButton.Enabled = mod.InGameDir;
                 TranslateModButton.Enabled = File.Exists(mod.getDictFilePath());
             }
         }
-        private void OpenGameDirButton_Click(object sender, EventArgs e)
+        private void OpenGameDirButton_Click(object? sender, EventArgs e)
         {
             string modName = modsListView.SelectedItems[0].Text;
-            string modpath = Path.GetDirectoryName(((ModItem)modsListView.SelectedItems[0].Tag).getModFilePath());
-            if (Directory.Exists(modpath))
+            string? modpath = Path.GetDirectoryName(((ModItem)modsListView.SelectedItems[0].Tag!)?.getModFilePath()!);
+            if (modpath!= null && Directory.Exists(modpath))
             {
                 Process.Start("explorer.exe", modpath);
             }
@@ -306,7 +291,7 @@ namespace KenshiTranslator
             if (!mergedMods.TryGetValue(modName, out var mod))
                 return;
 
-            string modPath = mod.getModFilePath();
+            string modPath = mod.getModFilePath()!;
             if (!File.Exists(modPath))
             {
                 MessageBox.Show("Mod file not found!");
@@ -315,11 +300,8 @@ namespace KenshiTranslator
 
             // Ensure dictionary exists
             string dictFile = mod.getDictFilePath();
-            var td = new TranslationDictionary(re);
-            lock (reLockRE)
-            {
-                re.LoadModFile(modPath);
-            }
+            modM.LoadModFile(modPath);
+            var td = new TranslationDictionary(modM.GetReverseEngineer());
             if (!File.Exists(dictFile))
                 td.ExportToDictFile(dictFile);
 
@@ -345,7 +327,7 @@ namespace KenshiTranslator
                     try
                     {
                         if (failureCount >= failureThreshold)
-                            return null;
+                            return "";
                         var translated = await _activeTranslator.TranslateAsync(original, sourceLang, targetLang);
                         successCount++;
                         return translated;
@@ -355,8 +337,8 @@ namespace KenshiTranslator
                     {
                         failureCount++;
                         if (failureCount >= failureThreshold)
-                            throw new InvalidOperationException($"Too many consecutive translation failures. The provider {_activeTranslator.Name} may not be working.");
-                            return null;
+                            throw new InvalidOperationException($"Too many consecutive translation failures. The provider {_activeTranslator.Name} may not be working.{ex.Message}");
+                            return "";
                     }
                 }, progress);
             }// limit concurrent requests to prevent API issues
@@ -380,42 +362,43 @@ namespace KenshiTranslator
 
             TranslateModButton.Enabled = File.Exists(mod.getDictFilePath());
         }
-        private async Task TranslateModButton_Click()
+        private Task TranslateModButton_Click()
         {
             if (modsListView.SelectedItems.Count == 0)
-                return;
-
+                return Task.CompletedTask;
             var selectedItem = modsListView.SelectedItems[0];
             string modName = selectedItem.Text;
 
             if (!mergedMods.TryGetValue(modName, out var mod))
-                return;
-            string modPath = mod.getModFilePath();
+                return Task.CompletedTask;
+            string modPath = mod.getModFilePath()!;
             string dictFile = mod.getDictFilePath();
             lock (reLockRE)
             {
-                re.LoadModFile(modPath);
-                var td = new TranslationDictionary(re);
+                modM.LoadModFile(modPath);
+                var td = new TranslationDictionary(modM.GetReverseEngineer());
                 td.ImportFromDictFile(dictFile);
                 
                 if (TranslationDictionary.GetTranslationProgress(dictFile) != 100)
                 {
                     MessageBox.Show($"Dictionary of {modName} is not complete!");
-                    return;
+                    return Task.CompletedTask;
                 }
                 if (!File.Exists(mod.getBackupFilePath()))
                     File.Copy(modPath, mod.getBackupFilePath());
-                re.SaveModFile(modPath);
+                modM.GetReverseEngineer().SaveModFile(modPath);
                 MessageBox.Show($"Translation of {modName} is finished!");
             }
+
+            return Task.CompletedTask;
         }
-        private void OpenSteamLinkButton_Click(object sender, EventArgs e)
+        private void OpenSteamLinkButton_Click(object? sender, EventArgs e)
         {
             string modName = modsListView.SelectedItems[0].Text;
             var mod = mergedMods.ContainsKey(modName) ? mergedMods[modName] : null;
-            if (mod != null && mod.workshopId != -1)
+            if (mod != null && mod.WorkshopId != -1)
             {
-                string url = $"https://steamcommunity.com/sharedfiles/filedetails/?id={mod.workshopId}";
+                string url = $"https://steamcommunity.com/sharedfiles/filedetails/?id={mod.WorkshopId}";
                 Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
             }
             else
@@ -423,19 +406,20 @@ namespace KenshiTranslator
                 MessageBox.Show("This mod is not from the Steam Workshop.");
             }
         }
-        private void CopyToGameDirButton_Click(object sender, EventArgs e)
+        private void CopyToGameDirButton_Click(object? sender, EventArgs e)
         {
             if (modsListView.SelectedItems.Count != 1)
                 return;
             string modName = modsListView.SelectedItems[0].Text;
             if (!mergedMods.TryGetValue(modName, out var mod)) 
                 return;
-            if (mod.workshopId == -1) 
+            if (mod.WorkshopId == -1) 
                 return;
 
-            string workshopFolder = Path.Combine(workshopModsPath, mod.workshopId.ToString());
-
-            string gameDirFolder = Path.Combine(gamedirModsPath, modName.Substring(0, modName.Length - 4));
+            // modName.Substring(0, modName.Length - 4)
+            string workshopFolder = Path.Combine(ModManager.workshopModsPath!, mod.WorkshopId.ToString());
+            
+            string gameDirFolder = Path.Combine(ModManager.gamedirModsPath!, Path.GetFileNameWithoutExtension(modName));
 
             if (Directory.Exists(gameDirFolder))
             {
@@ -479,12 +463,12 @@ namespace KenshiTranslator
         }
         private Color colorLanguage(string lang)
         {
-            return (lang == "eng") ? Color.Green : Color.Red; 
+            return (lang == "eng|eng") ? Color.Green : Color.Red; 
         }
         private void PopulateModsListView()
         {
             modsListView.Items.Clear();
-            foreach (var mod in selectedMods)
+            foreach (var mod in modM.LoadSelectedMods())
             {
                 if (!mergedMods.ContainsKey(mod))
                     mergedMods[mod] = new ModItem(mod);
@@ -500,11 +484,12 @@ namespace KenshiTranslator
 
             foreach (var folder_mod in workshopMods)
             {
-                string folderPart = Path.GetDirectoryName(folder_mod);
+                string? folderPart = Path.GetDirectoryName(folder_mod!);
+                if (folderPart == null) continue;
                 string filePart = Path.GetFileName(folder_mod);
                 if (!mergedMods.ContainsKey(filePart))
                     mergedMods[filePart] = new ModItem(filePart);
-                mergedMods[filePart].workshopId = Convert.ToInt64(folderPart);
+                mergedMods[filePart].WorkshopId = Convert.ToInt64(folderPart);
             }
             foreach (var mod in mergedMods.Values)
             {
@@ -547,7 +532,7 @@ namespace KenshiTranslator
         {
             var modsToDetect = modsListView.Items
                 .Cast<ListViewItem>()
-                .Select(item => (ModItem)item.Tag)
+                .Select(item => (ModItem)item.Tag!)
                 .Where(mod => !languageCache.ContainsKey(mod.Name))
                 .ToList();
 
@@ -572,13 +557,14 @@ namespace KenshiTranslator
                 {
                     detected = await Task.Run(() =>
                     {
-                        lock (reLockRE)
-                        {
-                            re.LoadModFile(mod.getModFilePath());
-                            var languages = identifier.Identify(re.getModSummary()).ToList();
-                            var mostCertain = languages.FirstOrDefault();
-                            return mostCertain != null ? mostCertain.Item1.Iso639_3 : "Unknown";
-                        }
+                        modM.LoadModFile(mod.getModFilePath()!);
+                        var lang_tuple = modM.GetReverseEngineer().getModSummary();
+                        var alpha_lang = identifier!.Identify(lang_tuple.Item1.ToString()).ToList();
+                        var sign_lang = identifier.Identify(lang_tuple.Item2.ToString()).ToList();
+                        var alpha_mostCertain = (alpha_lang == null || alpha_lang.FirstOrDefault() == null || lang_tuple.Item1.Length == 0) ? "Unknown" : alpha_lang.FirstOrDefault()!.Item1.Iso639_3;
+                        var sign_mostCertain = (sign_lang == null || sign_lang.FirstOrDefault() == null || lang_tuple.Item2.Length == 0) ? "Unknown" : sign_lang.FirstOrDefault()!.Item1.Iso639_3;
+
+                        return alpha_mostCertain + "|" + sign_mostCertain;  
                     });
                 }
                 catch (Exception ex)
@@ -618,102 +604,12 @@ namespace KenshiTranslator
 
             SaveLanguageCache();
         }
-        private string DetectSingleModLanguage(ModItem mod)
-        {
-            lock (reLockRE)
-            {
-                string filePath = mod.getModFilePath();
-
-                // ✅ ADD FILE EXISTENCE CHECK
-                if (!File.Exists(filePath))
-                {
-                    return "FileNotFound";
-                }
-
-                try
-                {
-                    re.LoadModFile(filePath);
-                    var summary = re.getModSummary();
-
-                    // ✅ ADD NULL CHECK
-                    if (string.IsNullOrEmpty(summary))
-                    {
-                        return "EmptyContent";
-                    }
-
-                    var languages = identifier.Identify(summary).ToList();
-                    var mostCertain = languages.FirstOrDefault();
-                    return mostCertain != null ? mostCertain.Item1.Iso639_3 : "Unknown";
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"Error processing {filePath}: {ex.Message}");
-                    return "Error";
-                }
-            }
-        }
-
         private void SafeInvoke(Action action)
         {
             if (this.IsHandleCreated)
                 this.Invoke(action);
             else
                 action();
-        }
-        private void LoadGameDirMods()
-        {
-            if (!Directory.Exists(gamedirModsPath))
-            {
-                MessageBox.Show("gamedir folder not found!");
-                return;
-            }
-            // Get all subdirectories in the mods folder
-            foreach (var folder in Directory.GetDirectories(gamedirModsPath))
-            {
-                // Get all .mod files in the current folder
-                var files = Directory.GetFiles(folder, "*.mod");
-                foreach (var file in files)
-                {
-                    gameDirMods.Add(Path.GetFileName(file));
-                }
-            }
-        }
-        private void LoadWorkshopMods()
-        {
-            if (!Directory.Exists(workshopModsPath))
-            {
-                MessageBox.Show("workshop folder not found!");
-                return;
-            }
-            foreach (var folder in Directory.GetDirectories(workshopModsPath))
-            {
-                var files = Directory.GetFiles(folder, "*.mod");
-                foreach (var file in files)
-                {
-                    string parentFolder = new DirectoryInfo(Path.GetDirectoryName(file)).Name;
-                    string fileName = Path.GetFileName(file);
-                    string relativeName = Path.Combine(parentFolder, fileName);
-                    workshopMods.Add(relativeName);
-                }
-            }
-        }
-
-        private void LoadSelectedMods()
-        {
-            
-            string cfgPath = Path.Combine(steamInstallPath, "steamapps/common/Kenshi/data", "mods.cfg");
-
-            if (!File.Exists(cfgPath))
-            {
-                MessageBox.Show("mods.cfg not found!");
-                return;
-            }
-
-            foreach (var line in File.ReadAllLines(cfgPath))
-            {
-                if (!string.IsNullOrWhiteSpace(line))
-                    selectedMods.Add(line.Trim());
-            }
         }
     }
 }

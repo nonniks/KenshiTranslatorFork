@@ -9,6 +9,8 @@ public class TranslationDictionary
 
     // Stores loaded translations from a .dict file
     private Dictionary<string, string> translations = new();
+    private static string lineEnd="|_END_|";
+    private static string sep = "|_SEP_|";
 
     public TranslationDictionary(ReverseEngineer re)
     {
@@ -21,21 +23,21 @@ public class TranslationDictionary
         using var writer = new StreamWriter(path);
 
         // Export description
-        if (reverseEngineer.modData.Header.FileType == 16 && reverseEngineer.modData.Header.Description != null)
-            writer.WriteLine($"description|{reverseEngineer.modData.Header.Description}|");
+        if (reverseEngineer.modData.Header!.FileType == 16 && reverseEngineer.modData.Header.Description != null)
+            writer.Write($"description{sep}{reverseEngineer.modData.Header.Description}{sep}{lineEnd}");
 
         // Export records
         int recordIndex = 1;
-        foreach (var record in reverseEngineer.modData.Records)
+        foreach (var record in reverseEngineer.modData.Records!)
         {
             if (record.Name != null)
-                writer.WriteLine($"record{recordIndex}_name|{record.Name}|");
+                writer.Write($"record{recordIndex}_name{sep}{record.Name}{sep}{lineEnd}");
 
             if (record.StringFields != null)
             {
                 foreach (var kvp in record.StringFields)
                     if (!kvp.Value.Equals(""))
-                        writer.WriteLine($"record{recordIndex}_{kvp.Key}|{kvp.Value}|");
+                        writer.Write($"record{recordIndex}_{kvp.Key}{sep}{kvp.Value}{sep}{lineEnd}");
             }
             recordIndex++;
         }
@@ -44,28 +46,21 @@ public class TranslationDictionary
     {
         if (!File.Exists(path))
             throw new FileNotFoundException("Dictionary file not found.", path);
-
         translations.Clear();
-        var lines = File.ReadAllLines(path);
-
-        // First: load translations into dictionary
-        foreach (var line in lines)
+        var all = File.ReadAllText(path);
+        foreach (var segment in all.Split(lineEnd))
         {
-            if (string.IsNullOrWhiteSpace(line)) continue;
-
-            var parts = line.Split('|');
-            if (parts.Length < 2) continue; // malformed line
-
+            if (string.IsNullOrWhiteSpace(segment)) continue;
+            var parts = segment.Split(sep);
+            if (parts.Length < 2) continue;
             var key = parts[0].Trim();
             var original = parts[1].Trim();
             var translated = parts.Length >= 3 ? parts[2].Trim() : "";
-
-            // prefer translated if present, otherwise original
             translations[key] = !string.IsNullOrWhiteSpace(translated) ? translated : original;
         }
 
-        // Second: apply translations into reverseEngineer.modData
-        if (reverseEngineer.modData.Header.FileType == 16 && reverseEngineer.modData.Header.Description != null)
+
+        if (reverseEngineer.modData.Header!.FileType == 16 && reverseEngineer.modData.Header.Description != null)
         {
             if (translations.TryGetValue("description", out var desc) && !string.IsNullOrWhiteSpace(desc))
             {
@@ -74,7 +69,7 @@ public class TranslationDictionary
         }
 
         int recordIndex = 1;
-        foreach (var record in reverseEngineer.modData.Records)
+        foreach (var record in reverseEngineer.modData.Records!)
         {
             // record name
             string nameKey = $"record{recordIndex}_name";
@@ -101,22 +96,21 @@ public class TranslationDictionary
     public static async Task ApplyTranslationsAsync(
     string dictFilePath,
     Func<string, Task<string>> translateFunc,
-    IProgress<int> progress = null,
+    IProgress<int>? progress = null,
     int batchSize = 50) // optional batch save
     {
-        var lines = File.ReadAllLines(dictFilePath).ToList();
-        int total = lines.Count;
+        var all = File.ReadAllText(dictFilePath).Split(lineEnd);
+        //var lines = File.ReadAllLines(dictFilePath).ToList();
+        int total = all.Length;
         int completed = 0;
         List<string> failedTranslations = new();
 
-        for (int i = 0; i < lines.Count; i++)
+        for (int i = 0; i < total; i++)
         {
-            var parts = lines[i].Split('|');
+            var parts = all[i].Split(sep);
             if (parts.Length < 3) { completed++; progress?.Report((completed * 100) / total); continue; }
-
             string original = parts[1];
             string translated = parts[2];
-
             if (string.IsNullOrWhiteSpace(translated))
             {
                 try
@@ -135,50 +129,52 @@ public class TranslationDictionary
                         }
                         catch (Exception ex) when (ex.Message.Contains("429"))
                         {
-                            await Task.Delay((attempt + 1) * 1000); // exponential backoff
+                            await Task.Delay((attempt + 1) * 1000);
                         }
                     }
 
                     if (string.IsNullOrWhiteSpace(parts[2]))
-                        failedTranslations.Add(original); // log failure
-
-                    await Task.Delay(100); // optional: throttle
+                        failedTranslations.Add(original); 
+                    await Task.Delay(100);
                 }
                 catch
                 {
                     failedTranslations.Add(original);
                 }
             }
-
-            lines[i] = string.Join('|', parts);
+            all[i] = string.Join(sep, parts);
             completed++;
 
             // Save every batchSize lines
             if (i % batchSize == 0)
-                File.WriteAllLines(dictFilePath, lines);
+                File.WriteAllText(dictFilePath,string.Join(lineEnd,parts));
+                //File.WriteAllLines(dictFilePath, lines);
 
             progress?.Report((completed * 100) / total);
         }
 
         // Save final file
-        File.WriteAllLines(dictFilePath, lines);
+        File.WriteAllText(dictFilePath, string.Join(lineEnd, all));
 
-        if (failedTranslations.Any())
-            File.WriteAllLines(Path.ChangeExtension(dictFilePath, ".failed.txt"), failedTranslations);
+       // File.WriteAllLines(dictFilePath, lines);
+
+        //if (failedTranslations.Any())
+            //File.WriteAllLines(Path.ChangeExtension(dictFilePath, ".failed.txt"), failedTranslations);
     }
     public static int GetTranslationProgress(string dictFilePath)
     {
         if (!File.Exists(dictFilePath)) return 0;
 
-        var lines = File.ReadAllLines(dictFilePath)
-                        .Where(l => !string.IsNullOrWhiteSpace(l))
-                        .ToArray();
+        var parts = File.ReadAllText(dictFilePath).Split(lineEnd).Where(l => !string.IsNullOrWhiteSpace(l)).ToArray();
+        //var lines = File.ReadAllLines(dictFilePath)
+                       // .Where(l => !string.IsNullOrWhiteSpace(l))
+                      // .ToArray();
 
-        if (lines.Length == 0) return 100;
+        if (parts.Length == 0) return 100;
 
-        int translatedCount = lines.Count(l => l.Split('|').Length >= 3 && !string.IsNullOrWhiteSpace(l.Split('|')[2]));
+        int translatedCount = parts.Count(l => l.Split(sep).Length >= 3 && !string.IsNullOrWhiteSpace(l.Split(sep)[2]));
 
 
-        return (int)Math.Round(Math.Ceiling(((translatedCount / (double)lines.Length) * 100)));
+        return (int)Math.Round(Math.Ceiling(((translatedCount / (double)parts.Length) * 100)));
     }
 }
