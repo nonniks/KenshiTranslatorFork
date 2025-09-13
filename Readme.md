@@ -1,74 +1,59 @@
-\# Kenshi Translator
+Kenshi Translator
 
+A modern .NET 9 tool for translating .mod files for the game Kenshi.
+It simplifies the manual process by extracting text into an editable dictionary (.dict), translating it with external providers, and applying the translations back into the .mod.
 
+📥 Download
 
-A modern .NET 8 tool for translating `.mod` files for the game Kenshi. It simplifies the manual process by extracting text into a editable dictionary and applying translations automatically.
+Grab the latest release from the Releases
+ page.
 
+Unzip the archive.
 
+Run KenshiTranslator.exe.
 
-\[!\[.NET 8](https://img.shields.io/badge/.NET-8.0-512bd4)](https://dotnet.microsoft.com/)
+Note:
 
-\[!\[License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+The build requires the .NET 9 Desktop Runtime (x64)
 
+✨ Features
 
+Translate Kenshi .mod files (supports v16 & v17).
 
-\## Download
+Clean, simple Windows UI.
 
+Can copy a mod Folder from the Workshop Folder to the Game Directory with just a click (it translates only mods that are in the Game's Directory)
 
+Always creates a backup (.backup) before applying translations.
 
-1\.  Grab the latest release from the \[Releases](https://github.com/YourUsername/KenshiTranslator/releases) page.
+Dictionary (.dict) format allows manual editing & resuming translations.
 
-2\.  Unzip the file.
+Open source and extensible.
 
-3\.  Run `KenshiTranslator.App.exe`.
+⚙️ How It Works
 
+Extract – The tool reads your .mod file and extracts all translatable strings into a dictionary file (.dict).
 
+Translate – The extracted dictionary can be auto-translated with providers (Google Translate, etc.) or manually edited.
 
-> \*\*Note:\*\* Requires the \[.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0).
+Apply – The dictionary is merged back into the .mod, replacing the original strings with their translated versions.
 
+Backup – Your original .mod is preserved as mod.backup in case you want to restore it.
 
+This workflow ensures you can iterate on translations safely without ever losing your original data.
 
-\## Features
+🛠 Build from Source
 
+Prerequisites: .NET 9 SDK 
+.
 
-
-\*   Translates Kenshi `.mod` files (supports v16 \& v17).
-
-\*   Clean, simple WPF user interface.
-
-\*   Non-destructive: makes a copy of your original mod. (as mod.backup)
-
-\*   Open source and extensible.
-
-
-
-\## Build from Source
-
-
-
-Prerequisites: \[.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0).
-
-
-
-```bash
-
-\# Clone the repo
-
+# Clone the repo
 git clone https://github.com/Kakrain/KenshiTranslator.git
-
 cd KenshiTranslator
 
-
-
-\# Restore \& build
-
+# Restore & build
 dotnet restore
-
 dotnet build
 
-
-
-\# Run the application
-
-dotnet run --project KenshiTranslator.App
-
+# Run the application
+dotnet run --project KenshiTranslator
