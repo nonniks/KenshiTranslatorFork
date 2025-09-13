@@ -97,10 +97,9 @@ public class TranslationDictionary
     string dictFilePath,
     Func<string, Task<string>> translateFunc,
     IProgress<int>? progress = null,
-    int batchSize = 50) // optional batch save
+    int batchSize = 100)
     {
         var all = File.ReadAllText(dictFilePath).Split(lineEnd);
-        //var lines = File.ReadAllLines(dictFilePath).ToList();
         int total = all.Length;
         int completed = 0;
         List<string> failedTranslations = new();
@@ -132,46 +131,26 @@ public class TranslationDictionary
                             await Task.Delay((attempt + 1) * 1000);
                         }
                     }
-
-                    if (string.IsNullOrWhiteSpace(parts[2]))
-                        failedTranslations.Add(original); 
                     await Task.Delay(100);
                 }
-                catch
-                {
-                    failedTranslations.Add(original);
-                }
+                catch{}
             }
             all[i] = string.Join(sep, parts);
             completed++;
 
             // Save every batchSize lines
             if (i % batchSize == 0)
-                File.WriteAllText(dictFilePath,string.Join(lineEnd,parts));
-                //File.WriteAllLines(dictFilePath, lines);
+                File.WriteAllText(dictFilePath,string.Join(lineEnd,all));
 
             progress?.Report((completed * 100) / total);
         }
-
-        // Save final file
         File.WriteAllText(dictFilePath, string.Join(lineEnd, all));
-
-       // File.WriteAllLines(dictFilePath, lines);
-
-        //if (failedTranslations.Any())
-            //File.WriteAllLines(Path.ChangeExtension(dictFilePath, ".failed.txt"), failedTranslations);
     }
     public static int GetTranslationProgress(string dictFilePath)
     {
         if (!File.Exists(dictFilePath)) return 0;
-
         var parts = File.ReadAllText(dictFilePath).Split(lineEnd).Where(l => !string.IsNullOrWhiteSpace(l)).ToArray();
-        //var lines = File.ReadAllLines(dictFilePath)
-                       // .Where(l => !string.IsNullOrWhiteSpace(l))
-                      // .ToArray();
-
         if (parts.Length == 0) return 100;
-
         int translatedCount = parts.Count(l => l.Split(sep).Length >= 3 && !string.IsNullOrWhiteSpace(l.Split(sep)[2]));
 
 

@@ -286,8 +286,6 @@ namespace KenshiTranslator.Helper
                 if ((sba.Length >= maxChars) && (sbs.Length >= maxChars))
                     break;
             }
-            //MessageBox.Show($"{sba.ToString()}|{sbs.ToString()}");
-            //Debug.WriteLine($"{sba.ToString()}|{sbs.ToString()}");
             return Tuple.Create(sba.ToString(), sbs.ToString());
         }
         
