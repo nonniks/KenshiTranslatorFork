@@ -39,18 +39,29 @@ namespace KenshiTranslator
 
         private ProgressBar progressBar;
         private Label progressLabel;
+        private TextBox searchTextBox;
+        private TranslationLogForm? logForm;
+        private DateTime translationStartTime;
+        private int translationTotalItems;
         private ModManager modM = new ModManager(new ReverseEngineer());
         private Button openGameDirButton;
         private Button openSteamLinkButton;
         private Button copyToGameDirButton;
         private readonly object reLockRE = new object();
         private ComboBox providerCombo;
+        private TextBox customApiTextBox;
+        private Button testApiButton;
+        private Label apiStatusLabel;
         private ComboBox fromLangCombo;
         private ComboBox toLangCombo;
         private Button TranslateModButton;
+        private string lastSelectedFromLang = "en";
+        private string lastSelectedToLang = "en";
         private Button CreateDictionaryButton;
+        private Button ShowLogButton;
         private Dictionary<string, string>? _supportedLanguages;
         private TranslatorInterface _activeTranslator=GTranslate_Translator.Instance;
+        private CustomApiTranslator? _customApiTranslator;
         public class ComboItem
         {
             public string Code { get; }
@@ -102,6 +113,38 @@ namespace KenshiTranslator
             layout.Controls.Add(progressLabel, 1, 0);
             layout.SetColumnSpan(progressLabel, 2);
 
+            var searchPanel = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 25
+            };
+
+            searchTextBox = new TextBox
+            {
+                Dock = DockStyle.Fill,
+                PlaceholderText = "Search mods by name..."
+            };
+            searchTextBox.TextChanged += SearchTextBox_TextChanged;
+            searchTextBox.KeyDown += SearchTextBox_KeyDown;
+            searchPanel.Controls.Add(searchTextBox);
+
+            var clearButton = new Button
+            {
+                Text = "✕",
+                Width = 25,
+                Dock = DockStyle.Right,
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Arial", 8, FontStyle.Bold)
+            };
+            clearButton.Click += (s, e) => {
+                searchTextBox.Text = "";
+                searchTextBox.Focus();
+            };
+            searchPanel.Controls.Add(clearButton);
+
+            layout.Controls.Add(searchPanel, 0, 1);
+            layout.SetColumnSpan(searchPanel, 2);
+
             modsListView = new ListView
             {
                 Dock = DockStyle.Fill,
@@ -111,7 +154,7 @@ namespace KenshiTranslator
             modsListView.Columns.Add("Mod Name", -2, HorizontalAlignment.Left);
             modsListView.Columns.Add("Language", 100);
             modsListView.Columns.Add("Translation Progress", 120, HorizontalAlignment.Left);
-            layout.Controls.Add(modsListView, 0,1);
+            layout.Controls.Add(modsListView, 0, 2);
             modsListView.SelectedIndexChanged += SelectedIndexChanged;
             modsListView.ColumnClick += ModsListView_ColumnClick!;
             modsListView.ListViewItemSorter = new ListViewColumnSorter();
@@ -122,7 +165,7 @@ namespace KenshiTranslator
                 FlowDirection = FlowDirection.TopDown,
                 AutoSize = true
             };
-            layout.Controls.Add(buttonPanel, 1, 1);
+            layout.Controls.Add(buttonPanel, 1, 2);
 
             openGameDirButton = new Button { Text = "Open Mod Directory", AutoSize = true, Enabled = false };
             openGameDirButton.Click += OpenGameDirButton_Click;
@@ -137,11 +180,58 @@ namespace KenshiTranslator
             buttonPanel.Controls.Add(copyToGameDirButton);
 
             providerCombo = new ComboBox { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList };
-            providerCombo.Items.AddRange(new string[] { "Aggregate", "Bing", "Google", "Google2", "Microsoft", "Yandex" });
+            providerCombo.Items.AddRange(new string[] { "Aggregate", "Bing", "Google", "Google2", "Microsoft", "Yandex", "Google Cloud V3", "Custom API" });
             providerCombo.SelectedIndex = 0;
             _activeTranslator = GTranslate_Translator.Instance;
             providerCombo.SelectedIndexChanged += (s,e)=>providerCombo_SelectedIndexChanged(s,e);
             buttonPanel.Controls.Add(providerCombo);
+
+            customApiTextBox = new TextBox {
+                Dock = DockStyle.Top,
+                PlaceholderText = "Enter DeepL key (ends with :fx) or Google key (starts with AIza)",
+                Visible = false
+            };
+            customApiTextBox.TextChanged += async (s, e) => {
+                apiStatusLabel.Text = "";
+                if (providerCombo.SelectedItem?.ToString() == "Custom API" && !string.IsNullOrWhiteSpace(customApiTextBox.Text))
+                {
+                    try
+                    {
+                        _customApiTranslator?.Dispose();
+                        _customApiTranslator = new CustomApiTranslator(customApiTextBox.Text);
+                        _activeTranslator = _customApiTranslator;
+                        testApiButton.Enabled = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"Error setting custom API: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        testApiButton.Enabled = false;
+                    }
+                }
+                else
+                {
+                    testApiButton.Enabled = false;
+                }
+            };
+            buttonPanel.Controls.Add(customApiTextBox);
+
+            testApiButton = new Button {
+                Text = "Test API",
+                AutoSize = true,
+                Enabled = false,
+                Visible = false
+            };
+            testApiButton.Click += async (s, e) => await TestApiButton_Click();
+            buttonPanel.Controls.Add(testApiButton);
+
+            apiStatusLabel = new Label {
+                Dock = DockStyle.Top,
+                Height = 20,
+                Text = "",
+                TextAlign = ContentAlignment.MiddleLeft,
+                Visible = false
+            };
+            buttonPanel.Controls.Add(apiStatusLabel);
 
 
             fromLangCombo = new ComboBox();
@@ -152,8 +242,8 @@ namespace KenshiTranslator
             buttonPanel.Controls.Add(fromLangCombo);
             buttonPanel.Controls.Add(toLangCombo);
 
-            fromLangCombo.SelectedValue = "en";  
-            toLangCombo.SelectedValue = "en";   
+            fromLangCombo.SelectedValue = lastSelectedFromLang;
+            toLangCombo.SelectedValue = lastSelectedToLang;   
 
             CreateDictionaryButton = new Button { Text = "Create Dictionary", AutoSize = true, Enabled = false };
             CreateDictionaryButton.Click += async (s, e) => await CreateDictionaryButton_Click();
@@ -163,10 +253,15 @@ namespace KenshiTranslator
             TranslateModButton.Click += async (s, e) => await TranslateModButton_Click();
             buttonPanel.Controls.Add(TranslateModButton);
 
-            
+            ShowLogButton = new Button { Text = "Show Log", AutoSize = true, Enabled = false };
+            ShowLogButton.Click += ShowLogButton_Click;
+            buttonPanel.Controls.Add(ShowLogButton);
+
+
 
             this.FormClosing += (s, e) => SaveLanguageCache();
             this.FormClosing += (s, e) => ModItem.DisposeIconCache();
+            this.FormClosing += (s, e) => _customApiTranslator?.Dispose();
             _ = InitializeAsync();
         }
         private void ModsListView_ColumnClick(object sender, ColumnClickEventArgs e)
@@ -192,9 +287,90 @@ namespace KenshiTranslator
         {
             if (providerCombo.SelectedItem == null) return;
             string provider = providerCombo.SelectedItem.ToString()!;
-            _activeTranslator = GTranslate_Translator.Instance;
-            ((GTranslate_Translator)_activeTranslator).setTranslator(providerCombo.SelectedItem.ToString()!);
-            _supportedLanguages = await _activeTranslator.GetSupportedLanguagesAsync();
+
+            // Save current language selection
+            if (fromLangCombo.SelectedValue != null)
+                lastSelectedFromLang = fromLangCombo.SelectedValue.ToString()!;
+            if (toLangCombo.SelectedValue != null)
+                lastSelectedToLang = toLangCombo.SelectedValue.ToString()!;
+
+            if (provider == "Google Cloud V3")
+            {
+                customApiTextBox.Visible = true;
+                testApiButton.Visible = true;
+                apiStatusLabel.Visible = true;
+                apiStatusLabel.Text = "";
+
+                // Show file dialog to select Service Account JSON
+                using var openFileDialog = new OpenFileDialog
+                {
+                    Title = "Select Google Cloud Service Account JSON file",
+                    Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*",
+                    CheckFileExists = true,
+                    CheckPathExists = true
+                };
+
+                if (openFileDialog.ShowDialog() == DialogResult.OK)
+                {
+                    customApiTextBox.Text = openFileDialog.FileName;
+                    customApiTextBox.ReadOnly = true; // Make it read-only since it's selected via dialog
+
+                    try
+                    {
+                        _customApiTranslator?.Dispose();
+                        _customApiTranslator = new CustomApiTranslator(openFileDialog.FileName);
+                        _activeTranslator = _customApiTranslator;
+                        testApiButton.Enabled = true;
+                        apiStatusLabel.Text = "✅ Service Account JSON loaded";
+                        apiStatusLabel.ForeColor = Color.Green;
+                    }
+                    catch (Exception ex)
+                    {
+                        apiStatusLabel.Text = $"❌ Error: {ex.Message}";
+                        apiStatusLabel.ForeColor = Color.Red;
+                        testApiButton.Enabled = false;
+                    }
+                }
+                else
+                {
+                    // User cancelled file selection, revert to previous provider
+                    providerCombo.SelectedIndex = 0; // Aggregate
+                    return;
+                }
+            }
+            else if (provider == "Custom API")
+            {
+                customApiTextBox.Visible = true;
+                testApiButton.Visible = true;
+                apiStatusLabel.Visible = true;
+                apiStatusLabel.Text = "";
+                customApiTextBox.ReadOnly = false; // Allow manual input for custom API
+
+                // Create custom API translator if API endpoint is provided
+                if (!string.IsNullOrWhiteSpace(customApiTextBox.Text))
+                {
+                    _customApiTranslator?.Dispose();
+                    _customApiTranslator = new CustomApiTranslator(customApiTextBox.Text);
+                    _activeTranslator = _customApiTranslator;
+                    testApiButton.Enabled = true;
+                }
+                else
+                {
+                    testApiButton.Enabled = false;
+                }
+                _supportedLanguages = await _activeTranslator.GetSupportedLanguagesAsync();
+            }
+            else
+            {
+                customApiTextBox.Visible = false;
+                testApiButton.Visible = false;
+                apiStatusLabel.Visible = false;
+                _customApiTranslator?.Dispose();
+                _customApiTranslator = null;
+                _activeTranslator = GTranslate_Translator.Instance;
+                ((GTranslate_Translator)_activeTranslator).setTranslator(provider);
+                _supportedLanguages = await _activeTranslator.GetSupportedLanguagesAsync();
+            }
 
             fromLangCombo.DataSource = _supportedLanguages.Select(lang => new ComboItem(lang.Key, lang.Value)).ToList();
             fromLangCombo.DisplayMember = "Name";
@@ -204,10 +380,21 @@ namespace KenshiTranslator
             toLangCombo.DisplayMember = "Name";
             toLangCombo.ValueMember = "Code";
 
+            // Restore previously selected languages if available
             if (fromLangCombo.Items.Count > 0)
-                fromLangCombo.SelectedValue = "en"; 
+            {
+                if (_supportedLanguages.ContainsKey(lastSelectedFromLang))
+                    fromLangCombo.SelectedValue = lastSelectedFromLang;
+                else
+                    fromLangCombo.SelectedValue = "en";
+            }
             if (toLangCombo.Items.Count > 0)
-                toLangCombo.SelectedValue = "en";
+            {
+                if (_supportedLanguages.ContainsKey(lastSelectedToLang))
+                    toLangCombo.SelectedValue = lastSelectedToLang;
+                else
+                    toLangCombo.SelectedValue = "en";
+            }
         }
         public record LanguageInfo(string code, string name);
         private async Task InitializeAsync()
@@ -345,28 +532,66 @@ namespace KenshiTranslator
             progressBar.Maximum = 100;
             progressBar.Value = 0;
 
+            // Initialize translation tracking
+            translationStartTime = DateTime.Now;
+            translationTotalItems = File.ReadAllText(dictFile).Split(new[] { "|_END_|" }, StringSplitOptions.None).Length;
+
+            // Initialize log window if not exists
+            if (logForm == null || logForm.IsDisposed)
+            {
+                logForm = new TranslationLogForm();
+            }
+            logForm.Reset();
+            ShowLogButton.Enabled = true;
+
+            DateTime lastUIUpdate = DateTime.MinValue;
             var progress = new Progress<int>(percent =>
             {
+                // Throttle UI updates to prevent freezing (max once per 500ms)
+                var now = DateTime.Now;
+                if ((now - lastUIUpdate).TotalMilliseconds < 500 && percent < 100)
+                    return;
+
+                lastUIUpdate = now;
                 progressBar.Value = percent;
-                progressLabel.Text = $"Translating {modName}... {percent}%";
+
+                // Calculate time remaining
+                var elapsed = now - translationStartTime;
+                var estimatedTotal = elapsed.TotalSeconds > 0 && percent > 0 ?
+                    TimeSpan.FromSeconds(elapsed.TotalSeconds * 100 / percent) :
+                    TimeSpan.Zero;
+                var remaining = estimatedTotal > elapsed ? estimatedTotal - elapsed : TimeSpan.Zero;
+
+                var timeText = remaining.TotalSeconds > 0 ?
+                    $" | ETA: {remaining:mm\\:ss}" : "";
+
+                progressLabel.Text = $"Translating {modName}... {percent}%{timeText}";
             });
 
-            string sourceLang = fromLangCombo.SelectedItem?.ToString()?.Split(' ')[0] ?? "auto";
-            string targetLang = toLangCombo.SelectedItem?.ToString()?.Split(' ')[0] ?? "en";
+            string sourceLang = fromLangCombo.SelectedValue?.ToString() ?? "auto";
+            string targetLang = toLangCombo.SelectedValue?.ToString() ?? "en";
             int failureCount = 0;
             int successCount = 0;
             const int failureThreshold = 10;
             // Start async translation with resume support
             try
             {
-                await TranslationDictionary.ApplyTranslationsAsync(dictFile, async (original) =>
+                // Check if we can use batch translation (Google V3)
+                Func<List<string>, string, string, Task<List<string>>>? batchTranslateFunc = null;
+                if (_activeTranslator is CustomApiTranslator customApi &&
+                    customApi.CurrentApiType == ApiType.GoogleCloudV3)
+                {
+                    batchTranslateFunc = customApi.TranslateBatchV3Async;
+                    Debug.WriteLine("[MainForm] Using Google V3 batch translation - much faster!");
+                }
+
+                successCount = await TranslationDictionary.ApplyTranslationsAsync(dictFile, async (original) =>
                 {
                     try
                     {
                         if (failureCount >= failureThreshold)
                             return "";
-                        var translated = await _activeTranslator.TranslateAsync(original, sourceLang, targetLang);
-                        successCount++;
+                        var translated = await _activeTranslator.TranslateAsync(original, sourceLang, targetLang).ConfigureAwait(false);
                         return translated;
 
                     }
@@ -377,8 +602,11 @@ namespace KenshiTranslator
                             throw new InvalidOperationException($"Too many consecutive translation failures. The provider {_activeTranslator.Name} may not be working.{ex.Message}");
                             return "";
                     }
-                }, progress);
-            }// limit concurrent requests to prevent API issues
+                }, progress, batchTranslateFunc != null ? 100 : 200,
+                (original, translated, success) => logForm?.LogTranslation(original, translated, success),
+                (original, error) => logForm?.LogError(original, error),
+                batchTranslateFunc).ConfigureAwait(false);
+            }
             catch (Exception ex)
             {
                 progressLabel.Text = "Translation aborted.";
@@ -400,6 +628,65 @@ namespace KenshiTranslator
             UpdateDetectedLanguage(modName, await DetectModLanguagesAsync(mod));
             TranslateModButton.Enabled = File.Exists(mod.getDictFilePath());
         }
+
+        private void ShowLogButton_Click(object? sender, EventArgs e)
+        {
+            if (logForm == null || logForm.IsDisposed)
+            {
+                logForm = new TranslationLogForm();
+            }
+
+            if (logForm.Visible)
+            {
+                logForm.BringToFront();
+            }
+            else
+            {
+                logForm.Show(this);
+            }
+        }
+
+        private async Task TestApiButton_Click()
+        {
+            if (_customApiTranslator == null)
+            {
+                apiStatusLabel.Text = "❌ No API configured";
+                apiStatusLabel.ForeColor = Color.Red;
+                return;
+            }
+
+            testApiButton.Enabled = false;
+            apiStatusLabel.Text = "🔄 Testing API...";
+            apiStatusLabel.ForeColor = Color.Orange;
+
+            try
+            {
+                // Test with a simple translation
+                string testText = "Hello, world!";
+                string testResult = await _customApiTranslator.TranslateAsync(testText, "EN", "RU");
+
+                if (!string.IsNullOrEmpty(testResult) && testResult != testText)
+                {
+                    apiStatusLabel.Text = $"✅ API OK (Test: {testResult})";
+                    apiStatusLabel.ForeColor = Color.Green;
+                }
+                else
+                {
+                    apiStatusLabel.Text = "⚠️ API returned empty/unchanged result";
+                    apiStatusLabel.ForeColor = Color.Orange;
+                }
+            }
+            catch (Exception ex)
+            {
+                apiStatusLabel.Text = $"❌ API Error: {ex.Message}";
+                apiStatusLabel.ForeColor = Color.Red;
+            }
+            finally
+            {
+                testApiButton.Enabled = true;
+            }
+        }
+
         private async Task TranslateModButton_Click()
         {
             if (modsListView.SelectedItems.Count == 0)
@@ -417,10 +704,17 @@ namespace KenshiTranslator
                 var td = new TranslationDictionary(modM.GetReverseEngineer());
                 td.ImportFromDictFile(dictFile);
                 
-                if (TranslationDictionary.GetTranslationProgress(dictFile) != 100)
+                int progress = TranslationDictionary.GetTranslationProgress(dictFile);
+                if (progress < 95)
                 {
-                    MessageBox.Show($"Dictionary of {modName} is not complete!");
-                    return;
+                    var result = MessageBox.Show(
+                        $"Dictionary of {modName} is only {progress}% complete.\n\nDo you want to apply the partial translation anyway?",
+                        "Partial Translation",
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Question);
+
+                    if (result == DialogResult.No)
+                        return;
                 }
                 if (!File.Exists(mod.getBackupFilePath()))
                     File.Copy(modPath, mod.getBackupFilePath());
@@ -532,7 +826,7 @@ namespace KenshiTranslator
                 modsListView.Invalidate(item.Bounds);
             }
         }
-        private void PopulateModsListView()
+        private void PopulateModsListView(string searchFilter = "")
         {
             modsListView.Items.Clear();
             foreach (var mod in modM.LoadSelectedMods())
@@ -558,7 +852,13 @@ namespace KenshiTranslator
                     mergedMods[filePart] = new ModItem(filePart);
                 mergedMods[filePart].WorkshopId = Convert.ToInt64(folderPart);
             }
-            foreach (var mod in mergedMods.Values)
+
+            // Filter mods based on search text
+            var filteredMods = string.IsNullOrWhiteSpace(searchFilter)
+                ? mergedMods.Values
+                : mergedMods.Values.Where(mod => mod.Name.Contains(searchFilter, StringComparison.OrdinalIgnoreCase));
+
+            foreach (var mod in filteredMods)
             {
                 // Create composite icon for this mod
                 Image icon = mod.CreateCompositeIcon();
@@ -586,6 +886,35 @@ namespace KenshiTranslator
                 modsListView.Items.Add(item);
             }
         }
+
+        private void SearchTextBox_TextChanged(object? sender, EventArgs e)
+        {
+            string searchText = searchTextBox.Text;
+            PopulateModsListView(searchText);
+
+            // Update status
+            int totalMods = mergedMods.Count;
+            int visibleMods = modsListView.Items.Count;
+
+            if (!string.IsNullOrWhiteSpace(searchText))
+            {
+                progressLabel.Text = $"Found {visibleMods}/{totalMods} mods matching '{searchText}'";
+            }
+            else
+            {
+                progressLabel.Text = "Ready";
+            }
+        }
+
+        private void SearchTextBox_KeyDown(object? sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Escape)
+            {
+                searchTextBox.Text = "";
+                e.Handled = true;
+            }
+        }
+
         private string detectLanguageFor(string s)
         {
             var candidates = identifier!.Identify(s).OrderBy(c => c.Item2).ToList();
